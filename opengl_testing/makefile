@@ -1,5 +1,5 @@
-TARGET = main
-SRC = main.c guilay.c
+TARGET = opengl_test
+SRC = opengl_test.c
 INCLUDE_DIR = include
 LIB_DIR = lib
 
