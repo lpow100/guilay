@@ -1,16 +1,21 @@
+#include <ft2build.h>
+#include FT_FREETYPE_H  
+#include <glad/glad.h>       // MUST be first OpenGL include
+#include <GLFW/glfw3.h>      // MUST come after glad
+
 #include "guilay.h"
 #include "font.h"
 
-#include <GLFW/glfw3.h>
-#include <GL/gl.h>
 #include <stdlib.h>
+
+
+// ----------- Structures -----------
 
 struct Element {
     ElementType type;
     void* data;
 };
 
-// A window, chaging internal values without using the proper functions is not reccomended
 struct Window {
     GLFWwindow* openglWindow;
     Vector2i size;
@@ -25,109 +30,134 @@ struct Text {
     Color color;
 };
 
-int GuilayInit() { return glfwInit(); }
-void GuilayExit() { glfwTerminate(); }
+
+// ----------- Init / Exit -----------
+
+int GuilayInit() {
+    if(glfwInit() == GLFW_FALSE) return 1;
+
+    // Force compatibility mode so glBegin(), glMatrixMode(), etc work
+    glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_COMPAT_PROFILE);
+
+    FT_Library ft;
+    if (FT_Init_FreeType(&ft)) return 1;
+    FT_Face face;
+    if (FT_New_Face(ft, "fonts/arial.ttf", 0, &face)) return 1;
+
+    return 0;
+}
+
+void GuilayExit() {
+    glfwTerminate();
+}
+
+
+// ----------- Window creation -----------
 
 Window *CreateWindow(Vector2i size, char* name) {
     Window *window = (Window*)malloc(sizeof(Window));
     window->size = size;
-    window->openglWindow = glfwCreateWindow(size.x, size.y, "OpenGL Colored Square", NULL, NULL);
+
+    window->openglWindow = glfwCreateWindow(size.x, size.y, name, NULL, NULL);
     window->elementCount = 0;
+    window->elements = NULL;
+
     return window;
 }
 
+
+// ----------- Projection setup -----------
+
 void setup_projection(int width, int height) {
     glViewport(0, 0, width, height);
+
     glMatrixMode(GL_PROJECTION);
     glLoadIdentity();
-    // Set up orthographic projection so we can use pixel coordinates easily (0 to 800 for X, 0 to 600 for Y)
+
     glOrtho(0.0, width, 0.0, height, -1.0, 1.0);
+
     glMatrixMode(GL_MODELVIEW);
     glLoadIdentity();
 }
 
 void PrepareWindow(Window* window) {
     glfwMakeContextCurrent(window->openglWindow);
-    setup_projection(window->size.x,window->size.y);
+    gladLoadGL(); // Load GL function pointers through glad
+    setup_projection(window->size.x, window->size.y);
 }
 
+
+// ----------- Clear -----------
+
 void FillWindow(Window* window, Color fillColor) {
-    glClearColor(fillColor.red / 255, fillColor.green / 255, fillColor.blue / 255, 1);
+    glClearColor(fillColor.red / 255.0f,
+                 fillColor.green / 255.0f,
+                 fillColor.blue / 255.0f,
+                 1.0f);
+
     glClear(GL_COLOR_BUFFER_BIT);
 }
 
-// Renders a string starting at screen position (x, y)
-void render_string(const char *text, float start_x, float start_y, float char_scale) {
-    float current_x = start_x;
-    
-    // 1. Prepare Vector2 Buffer (for dynamic data)
-    // NOTE: In a real app, you'd use a dynamic VBO/VAO setup.
-    // Here we'll just define an array and draw it.
-    
-    // Max size: Max string length * CHAR_WIDTH * CHAR_HEIGHT * 6 vertices
-    Vector2 vertices[512 * FONT_CHAR_WIDTH * FONT_CHAR_HEIGHT * 6]; 
-    int vert_count = 0;
 
-    for (const char *p = text; *p != '\0'; p++) {
+// ----------- Text Rendering (compatibility mode) -----------
+
+void render_string(const char *text, float start_x, float start_y, float char_scale) {
+    float x = start_x;
+
+    glBegin(GL_TRIANGLES);
+
+    for (const char *p = text; *p; p++) {
+
         uint8_t offset = ' ' - *p;
-        
-        // Iterate through rows (Y-axis) of the 5x5 bitmap
+
         for (int row = 0; row < FONT_CHAR_HEIGHT; row++) {
-            // Get the 8-bit row data.
-            uint8_t row_data = font[row*5+offset];
-            
-            // Iterate through columns (X-axis) of the 5x5 bitmap
+            uint8_t row_data = font[row * 5 + offset];
+
             for (int col = 0; col < FONT_CHAR_WIDTH; col++) {
-                // Check if the pixel is 'on' (bit is 1).
-                // Bits are read right-to-left: bit 0 is the rightmost pixel.
-                // To read left-to-right, we check the bit at (5 - 1 - col).
-                if ((row_data >> (FONT_CHAR_WIDTH - 1 - col)) & 0x1) {
-                    
-                    // --- Generate Quad Vertices ---
-                    
-                    // Pixel position in screen space, scaled.
-                    float px = current_x + (float)col * char_scale;
-                    // Note: Flip Y if needed. If row 0 is the top, (HEIGHT - 1 - row) is used.
-                    float py = start_y - (float)(FONT_CHAR_HEIGHT - 1 - row) * char_scale;
-                    
-                    // Corner coordinates (for a 1-unit square, then scaled)
+
+                if ((row_data >> (FONT_CHAR_WIDTH - 1 - col)) & 1) {
+
+                    float px = x + col * char_scale;
+                    float py = start_y - (FONT_CHAR_HEIGHT - 1 - row) * char_scale;
+
                     float x0 = px;
                     float y0 = py;
                     float x1 = px + char_scale;
                     float y1 = py + char_scale;
 
-                    // Vertices (2 triangles/6 vertices)
-                    // Triangle 1 (Bottom-Left, Top-Left, Top-Right)
-                    vertices[vert_count++] = (Vector2){x0, y0};
-                    vertices[vert_count++] = (Vector2){x0, y1};
-                    vertices[vert_count++] = (Vector2){x1, y1};
+                    // Triangle 1
+                    glVertex2f(x0, y0);
+                    glVertex2f(x0, y1);
+                    glVertex2f(x1, y1);
 
-                    // Triangle 2 (Bottom-Left, Top-Right, Bottom-Right)
-                    vertices[vert_count++] = (Vector2){x0, y0};
-                    vertices[vert_count++] = (Vector2){x1, y1};
-                    vertices[vert_count++] = (Vector2){x1, y0};
+                    // Triangle 2
+                    glVertex2f(x0, y0);
+                    glVertex2f(x1, y1);
+                    glVertex2f(x1, y0);
                 }
             }
         }
-        
-        // Advance current_x by the width of the character plus some spacing.
-        current_x += FONT_CHAR_WIDTH * char_scale + char_scale * 0.5f; 
+
+        // Add spacing between characters
+        x += FONT_CHAR_WIDTH * char_scale + char_scale * 0.5f;
     }
-    
-    // 2. Draw the generated vertices
-    // Assuming you have bound your VAO and shader program already
-    glBufferData(GL_ARRAY_BUFFER, vert_count * sizeof(Vector2), vertices, GL_STATIC_DRAW);
-    glDrawArrays(GL_TRIANGLES, 0, vert_count);
+
+    glEnd();
 }
 
+
+// ----------- Update Window -----------
+
 void UpdateWindow(Window* window) {
-    for (int i = 0; i < window->elementCount; i++) {
+    for (size_t i = 0; i < window->elementCount; i++) {
         Element* element = window->elements[i];
+
         if (element->type == TEXT) {
-            Text* text = element->data;
-            render_string(text->text,1000,100,text->scale);
+            Text* t = element->data;
+            render_string(t->text, 20, window->size.y - 40, t->scale);
         }
     }
+
     glfwSwapBuffers(window->openglWindow);
     glfwPollEvents();
 }
@@ -136,40 +166,31 @@ bool WindowShouldClose(Window* window) {
     return glfwWindowShouldClose(window->openglWindow);
 }
 
-// Helper function to resize the array of element pointers
+
+// ----------- Element Management -----------
+
 void ResizeElementsArray(Window* window, size_t newCount) {
-    // Reallocate memory for the new size
-    // Note: realloc returns NULL on failure, handle this in a real app
     window->elements = (Element**)realloc(window->elements, newCount * sizeof(Element*));
-    if (window->elements == NULL && newCount > 0) {
-        // Handle reallocation failure (e.g., print error and exit)
-    }
     window->elementCount = newCount;
 }
 
-// Helper to create a new Element structure
 Element* CreateElement(ElementType type, void* data) {
-    // Allocate memory for the new Element struct
-    Element* newElement = (Element*)malloc(sizeof(Element));
-    if (newElement == NULL) {
-    }
-
-    newElement->type = type;
-    newElement->data = data;
-
-    return newElement;
+    Element* e = (Element*)malloc(sizeof(Element));
+    e->type = type;
+    e->data = data;
+    return e;
 }
 
 Text* CreateText(Vector2 size, char* text, float scale, Color color) {
-    Text* textElement = (Text*) malloc(sizeof(Text));
-    textElement->size = size;
-    textElement->text = text;
-    textElement->color = color;
-    textElement->scale = scale;
-    return textElement;
+    Text* t = (Text*)malloc(sizeof(Text));
+    t->size = size;
+    t->text = text;
+    t->color = color;
+    t->scale = scale;
+    return t;
 }
 
-void AddText(Window* window, Text* button) {
-    ResizeElementsArray(window,window->elementCount+1);
-    window->elements[window->elementCount+1] = CreateElement(TEXT, button);
+void AddText(Window* window, Text* txt) {
+    ResizeElementsArray(window, window->elementCount + 1);
+    window->elements[window->elementCount - 1] = CreateElement(TEXT, txt);
 }

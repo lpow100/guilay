@@ -1,71 +1,102 @@
-
+#include <glad/glad.h>
 #include <GLFW/glfw3.h>
 #include <GL/gl.h>
 #include <stdio.h>
 
-// Function to set up the 2D projection matrix
-void setup_projection(int width, int height) {
-    glViewport(0, 0, width, height);
-    glMatrixMode(GL_PROJECTION);
-    glLoadIdentity();
-    // Set up orthographic projection so we can use pixel coordinates easily (0 to 800 for X, 0 to 600 for Y)
-    glOrtho(0.0, width, 0.0, height, -1.0, 1.0);
-    glMatrixMode(GL_MODELVIEW);
-    glLoadIdentity();
-}
+#include "../font.h"
 
-// Function to draw the colored square
-void draw_square() {
-    // Define the colors for each corner using glColor3f(R, G, B)
-    
+void render_string(const char *text, float start_x, float start_y, float char_scale) {
+    float x = start_x;
+
     glBegin(GL_TRIANGLES);
 
-    // Top-Left (Red Corner)
-    glColor3f(1.0f, 0.0f, 0.0f); 
-    glVertex2f(100.0f, 300.0f); // X, Y coordinates
+    for (const char *p = text; *p; p++) {
 
-    // Top-Right (Yellow Corner, a mix of Red and Green)
-    glColor3f(0.0f, 1.0f, 0.0f); 
-    glVertex2f(300.0f, 300.0f);
+        uint8_t offset = *p - ' ';
 
-    // Bottom-Right (Blue Corner - or whatever you prefer, maybe Magenta?)
-    glColor3f(0.0f, 0.0f, 1.0f); 
-    glVertex2f(200.0f, 125.0f);
+        for (int row = 0; row < FONT_CHAR_HEIGHT; row++) {
+            uint8_t row_data = font[row * 5 + offset];
+
+            for (int col = 0; col < FONT_CHAR_WIDTH; col++) {
+
+                if ((row_data >> (FONT_CHAR_WIDTH - 1 - col)) & 0b1 != 0) {
+
+                    float px = x + col * char_scale;
+                    float py = start_y - (FONT_CHAR_HEIGHT - 1 - row) * char_scale;
+
+                    float x0 = px;
+                    float y0 = py;
+                    float x1 = px + char_scale;
+                    float y1 = py + char_scale;
+
+                    
+                    printf("#");
+                    
+                    glColor3f(1.0f,1.0f,1.0f);
+
+                    // Triangle 1
+                    glVertex2f(x0, y0);
+                    glVertex2f(x0, y1);
+                    glVertex2f(x1, y1);
+
+                    // Triangle 2
+                    glVertex2f(x0, y0);
+                    glVertex2f(x1, y1);
+                    glVertex2f(x1, y0);
+                } else {
+                    printf(".");
+                }
+            }
+            printf(" ");
+        }
+
+        // Add spacing between characters
+        x += FONT_CHAR_WIDTH * char_scale + char_scale * 0.5f;
+        printf("\n");
+    }
+
+    printf("\n\n");
 
     glEnd();
 }
 
-int main(void) {
-    GLFWwindow* window;
-
-    // Initialize the library
-    if (!glfwInit())
+int main(void)
+{
+    // --- Initialize GLFW ---
+    if (!glfwInit()) {
         return -1;
+    }
 
-    // Create a windowed mode window and its OpenGL context
-    window = glfwCreateWindow(800, 600, "OpenGL Colored Square", NULL, NULL);
+    // --- Create window ---
+    GLFWwindow* window = glfwCreateWindow(800, 600, "Test", NULL, NULL);
     if (!window) {
         glfwTerminate();
         return -1;
     }
 
-    // Make the window's context current
     glfwMakeContextCurrent(window);
 
-    // Set up our 2D projection
-    setup_projection(800, 600);
+    // --- Load GL ---
+    if (!gladLoadGLLoader((GLADloadproc)glfwGetProcAddress)) {
+        printf("Failed to init GLAD\n");
+        return -1;
+    }
 
-    // Loop until the user closes the window
+    glMatrixMode(GL_PROJECTION);
+    glLoadIdentity();
+    glOrtho(0, 800, 0, 600, -1, 1); // left, right, bottom, top, near, far
+
+    glMatrixMode(GL_MODELVIEW);
+    glLoadIdentity();
+
+
+    // --- Main loop ---
     while (!glfwWindowShouldClose(window)) {
-        // Render here
-        glClear(GL_COLOR_BUFFER_BIT); // Clear the screen to black (default)
+        glClear(GL_COLOR_BUFFER_BIT);
 
-        draw_square();
+        render_string("test",100,100,2);
 
-        // Swap front and back buffers
         glfwSwapBuffers(window);
-
-        // Poll for and process events
         glfwPollEvents();
     }
 
