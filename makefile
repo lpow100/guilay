@@ -1,5 +1,5 @@
 TARGET = main
-SRC = main.c guilay.c glad.c
+SRC = src/main.c src/guilay.c src/glad.c src/shader.c
 INCLUDE_DIR = include
 LIB_DIR = lib
 

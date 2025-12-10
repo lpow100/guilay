@@ -1,105 +1,126 @@
-#include <glad/glad.h>
+
+
+#include "../src/shader.h"
 #include <GLFW/glfw3.h>
-#include <GL/gl.h>
+// #include <GL/gl.h> // Remove: Already included via glad/glfw3, and often conflicts.
 #include <stdio.h>
+#include <stdlib.h> // Needed for exit/malloc/free if used in shader.c
 
-#include "../font.h"
+// Assuming your custom shader functions are in this header
 
-void render_string(const char *text, float start_x, float start_y, float char_scale) {
-    float x = start_x;
+// --- VBO/VAO Globals (for the test triangle) ---
+unsigned int VAO, VBO;
 
-    glBegin(GL_TRIANGLES);
+// --- Vertex Data (A simple green triangle in NDC) ---
+float vertices[] = {
+    // Coordinates (X, Y, Z) - in Normalized Device Coordinates (-1.0 to 1.0)
+    -0.25f, -0.5f, 0.0f, // Bottom-left
+     0.0f,  0.25f, 0.0f, // Bottom-right
+    -0.675f,  0.0f, 0.0f  // Top-center
+};
 
-    for (const char *p = text; *p; p++) {
+// --- Function to set up the VAO/VBO for the triangle ---
+void setup_triangle_buffers() {
+    glGenVertexArrays(1, &VAO);
+    glGenBuffers(1, &VBO);
 
-        uint8_t offset = *p - ' ';
+    glBindVertexArray(VAO);
 
-        for (int row = 0; row < FONT_CHAR_HEIGHT; row++) {
-            uint8_t row_data = font[row * 5 + offset];
+    glBindBuffer(GL_ARRAY_BUFFER, VBO);
+    glBufferData(GL_ARRAY_BUFFER, sizeof(vertices), vertices, GL_STATIC_DRAW);
 
-            for (int col = 0; col < FONT_CHAR_WIDTH; col++) {
+    // Position attribute (location 0 from the basic.vert shader)
+    // Size is 3 (vec3), Stride is 3*sizeof(float), offset is 0
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(float), (void*)0);
+    glEnableVertexAttribArray(0);
 
-                if ((row_data >> (FONT_CHAR_WIDTH - 1 - col)) & 0b1 != 0) {
-
-                    float px = x + col * char_scale;
-                    float py = start_y - (FONT_CHAR_HEIGHT - 1 - row) * char_scale;
-
-                    float x0 = px;
-                    float y0 = py;
-                    float x1 = px + char_scale;
-                    float y1 = py + char_scale;
-
-                    
-                    printf("#");
-                    
-                    glColor3f(1.0f,1.0f,1.0f);
-
-                    // Triangle 1
-                    glVertex2f(x0, y0);
-                    glVertex2f(x0, y1);
-                    glVertex2f(x1, y1);
-
-                    // Triangle 2
-                    glVertex2f(x0, y0);
-                    glVertex2f(x1, y1);
-                    glVertex2f(x1, y0);
-                } else {
-                    printf(".");
-                }
-            }
-            printf(" ");
-        }
-
-        // Add spacing between characters
-        x += FONT_CHAR_WIDTH * char_scale + char_scale * 0.5f;
-        printf("\n");
-    }
-
-    printf("\n\n");
-
-    glEnd();
+    // Unbind VBO, then VAO
+    glsetup_triangle_buffersBindBuffer(GL_ARRAY_BUFFER, 0); 
+    glBinsetup_triangle_buffersdVertexArray(0);
 }
+
 
 int main(void)
 {
     // --- Initialize GLFW ---
     if (!glfwInit()) {
+        fprintf(stderr, "Failed to initialize GLFW\n");
         return -1;
     }
+    
+    // Use modern OpenGL Core Profile (3.3 is common)
+    glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
+    glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
+    glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
 
     // --- Create window ---
-    GLFWwindow* window = glfwCreateWindow(800, 600, "Test", NULL, NULL);
+    GLFWwindow* window = glfwCreateWindow(800, 600, "Shader Test", NULL, NULL);
     if (!window) {
+        fprintf(stderr, "Failed to create GLFW window\n");
         glfwTerminate();
         return -1;
     }
 
     glfwMakeContextCurrent(window);
 
-    // --- Load GL ---
+    // --- Load GLAD (must happen after context creation) ---
     if (!gladLoadGLLoader((GLADloadproc)glfwGetProcAddress)) {
-        printf("Failed to init GLAD\n");
+        fprintf(stderr, "Failed to initialize GLAD\n");
         return -1;
     }
 
-    glMatrixMode(GL_PROJECTION);
-    glLoadIdentity();
-    glOrtho(0, 800, 0, 600, -1, 1); // left, right, bottom, top, near, far
+    // Set viewport dimensions
+    glViewport(0, 0, 800, 600);
+    
+    // --- Initialize Shader ---
+    Shader myShader;
 
-    glMatrixMode(GL_MODELVIEW);
-    glLoadIdentity();
+    // Use actual shader filenames for testing (e.g., from the previous answer)
+    // Ensure these files (basic.vert and basic.frag) exist next to your executable!
+    if (!CreateShader(&myShader, "../src/fontShader.vert", "../src/fontShader.frag")) {
+        fprintf(stderr, "Failed to initialize shader!\n");
+        // Don't continue if shader fails to load
+        return -1; 
+    }
+    
+    // --- Setup Buffers ---
+    setup_triangle_buffers();
 
 
     // --- Main loop ---
     while (!glfwWindowShouldClose(window)) {
+        // Clear the screen with a background color (e.g., a dark gray)
+        glClearColor(0.2f, 0.2f, 0.2f, 1.0f);
         glClear(GL_COLOR_BUFFER_BIT);
 
-        render_string("test",100,100,2);
+        // --- Render Triangle ---
+        
+        // 1. Use the shader
+        ShaderUse(&myShader); 
 
+        // NOTE: The uniform 'textColor' is not used by the basic.frag shader!
+        // This line is just for demonstration, you'd remove it for the basic test.
+        // Shader_SetVec3(&myShader, "textColor", 1.0f, 0.5f, 0.2f);
+
+        // 2. Bind the VAO
+        glBindVertexArray(VAO); 
+
+        // 3. Draw the triangle
+        glDrawArrays(GL_TRIANGLES, 0, 3); 
+        
+        // 4. Unbind (optional, but good practice)
+        glBindVertexArray(0);
+
+        // Swap buffers and poll events
         glfwSwapBuffers(window);
         glfwPollEvents();
     }
 
+    // --- Cleanup ---
+    // glDeleteBuffers(1, &VBO);
+    // glDeleteVertexArrays(1, &VAO);
+    // Shader_Destroy(&myShader); // If you implemented this in shader.c
+    
     glfwTerminate();
     return 0;
 }

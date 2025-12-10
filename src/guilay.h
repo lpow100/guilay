@@ -29,6 +29,9 @@ typedef struct Color{
     uint8_t green;
 } Color;
 
+typedef struct Character Character;
+
+
 // initializes guilay
 int GuilayInit();
 // Cleanly exits guilay

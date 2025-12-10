@@ -1,5 +1,5 @@
 TARGET = opengl_test
-SRC = opengl_test.c
+SRC = opengl_test.c ../src/shader.c ../src/glad.c
 INCLUDE_DIR = ../include
 LIB_DIR = ../lib
 
