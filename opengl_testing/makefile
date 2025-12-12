@@ -11,7 +11,7 @@ ifeq ($(OS),Windows_NT)
 else
     CC = gcc
     CFLAGS = -I$(INCLUDE_DIR)
-    LDFLAGS = -lglfw -lGL -lm -ldl -lpthread -lrt
+    LDFLAGS = -lglfw -lGL -lm -ldl -lpthread -lrt -lfreetype
     EXE = $(TARGET)
 endif
 

@@ -4,32 +4,22 @@
 #include <GLFW/glfw3.h>      // MUST come after glad
 
 #include "guilay.h"
-#include "font.h"
-#include "shader.h"
+#include "common/font.h"
+#include "common/shader.h"
+#include "common/elements.h"
 
 #include <stdlib.h>
 
 #define CHARACTER_LOAD_COUNT 128
+#define MAT4_SIZE 16
 
 // ----------- Structures -----------
-
-struct Element {
-    ElementType type;
-    void* data;
-};
 
 struct Window {
     GLFWwindow* openglWindow;
     Vector2i size;
     Element** elements;
     size_t elementCount;
-};
-
-struct Text {
-    Vector2 size;
-    float scale;
-    char* text;
-    Color color;
 };
 
 struct Character {
@@ -40,22 +30,87 @@ struct Character {
 };
 
 struct Character characters[CHARACTER_LOAD_COUNT];
-
+unsigned int VAO, VBO;
+Shader textShader;
 
 // ----------- Init / Exit -----------
 
 int GuilayInit() {
+
     if(glfwInit() == GLFW_FALSE) return 1;
 
     // Force compatibility mode so glBegin(), glMatrixMode(), etc work
-    glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_COMPAT_PROFILE);
+    glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
+    glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
+    glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
+
+    return 0;
+}
+
+void GuilayExit() {
+    glfwTerminate();
+}
+
+void create_ortho_matrix(float *M, 
+                         float left, float right, 
+                         float bottom, float top, 
+                         float near, float far) 
+{
+    // The matrix is initialized to zero
+    for (int i = 0; i < MAT4_SIZE; i++) {
+        M[i] = 0.0f;
+    }
+
+    float tx = -(right + left) / (right - left);
+    float ty = -(top + bottom) / (top - bottom);
+    float tz = -(far + near) / (far - near);
+
+    // Column 0 (M[0], M[1], M[2], M[3])
+    M[0] = 2.0f / (right - left);
+    // M[1] = 0.0f
+    // M[2] = 0.0f
+    // M[3] = 0.0f
+
+    // Column 1 (M[4], M[5], M[6], M[7])
+    // M[4] = 0.0f
+    M[5] = 2.0f / (top - bottom);
+    // M[6] = 0.0f
+    // M[7] = 0.0f
+
+    // Column 2 (M[8], M[9], M[10], M[11])
+    // M[8] = 0.0f
+    // M[9] = 0.0f
+    M[10] = -2.0f / (far - near);
+    // M[11] = 0.0f
+
+    // Column 3 (M[12], M[13], M[14], M[15]) - Translation column
+    M[12] = tx;
+    M[13] = ty;
+    M[14] = tz;
+    M[15] = 1.0f;
+}
+
+int LoadAssets(Window* window) {
+    if (!gladLoadGLLoader((GLADloadproc)glfwGetProcAddress)) {
+        fprintf(stderr, "Failed to initialize GLAD\n");
+        return -1;
+    }
 
     FT_Library ft;
-    if (FT_Init_FreeType(&ft)) return 1;
+    int errorCode = FT_Init_FreeType(&ft);
+    printf("FT first call said: %d\n",errorCode);
+    if (errorCode) return 1;
     FT_Face face;
-    if (FT_New_Face(ft, "fonts/arial.ttf", 0, &face)) return 1;
+    errorCode = FT_New_Face(ft, "fonts/Roboto-Black.ttf", 0, &face);
+    printf("FT Second call said: %d\n",errorCode);
+    if (errorCode) return 1;
+
+    FT_Set_Pixel_Sizes(face, 0, 48); 
 
     glPixelStorei(GL_UNPACK_ALIGNMENT, 1); // disable byte-alignment restriction
+
+    printf("Bookmark\n");
+    fflush(stdout);
   
     for (unsigned char c = 0; c < 128; c++)
     {
@@ -97,7 +152,12 @@ int GuilayInit() {
     FT_Done_Face(face);
     FT_Done_FreeType(ft);
 
-    unsigned int VAO, VBO;
+    printf("Bookmark\n");
+    fflush(stdout);
+
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);  
+
     glGenVertexArrays(1, &VAO);
     glGenBuffers(1, &VBO);
     glBindVertexArray(VAO);
@@ -106,15 +166,24 @@ int GuilayInit() {
     glEnableVertexAttribArray(0);
     glVertexAttribPointer(0, 4, GL_FLOAT, GL_FALSE, 4 * sizeof(float), 0);
     glBindBuffer(GL_ARRAY_BUFFER, 0);
-    glBindVertexArray(0);      
+    glBindVertexArray(0); 
+    
+    CreateShader(&textShader, "src/shaders/fontShader.vert", "src/shaders/fontShader.frag");
+
+    float projection[MAT4_SIZE];
+
+    create_ortho_matrix(projection,0.0f,(float)window->size.x,0.0f,(float)window->size.y,-1.0f,1.0f);
+
+    GLint colorUniformLocation = glGetUniformLocation(textShader.ID, "projection");
+    if (colorUniformLocation == -1) {
+        fprintf(stderr, "Failed to find uniform!\n");
+    }
+
+    glUseProgram(textShader.ID);
+    glUniformMatrix4fv(colorUniformLocation, 1, GL_FALSE, projection);
 
     return 0;
 }
-
-void GuilayExit() {
-    glfwTerminate();
-}
-
 
 // ----------- Window creation -----------
 
@@ -126,29 +195,13 @@ Window *CreateWindow(Vector2i size, char* name) {
     window->elementCount = 0;
     window->elements = NULL;
 
+    glfwMakeContextCurrent(window->openglWindow);
+
     return window;
 }
 
 
 // ----------- Projection setup -----------
-
-void setup_projection(int width, int height) {
-    glViewport(0, 0, width, height);
-
-    glMatrixMode(GL_PROJECTION);
-    glLoadIdentity();
-
-    glOrtho(0.0, width, 0.0, height, -1.0, 1.0);
-
-    glMatrixMode(GL_MODELVIEW);
-    glLoadIdentity();
-}
-
-void PrepareWindow(Window* window) {
-    glfwMakeContextCurrent(window->openglWindow);
-    gladLoadGL(); // Load GL function pointers through glad
-    setup_projection(window->size.x, window->size.y);
-}
 
 
 // ----------- Clear -----------
@@ -165,19 +218,18 @@ void FillWindow(Window* window, Color fillColor) {
 
 // ----------- Text Rendering (compatibility mode) -----------
 
-void RenderText(Shader &s, std::string text, float x, float y, float scale, glm::vec3 color)
+void RenderText(Shader *s, char* text, float x, float y, float scale, Color color)
 {
     // activate corresponding render state	
-    s.Use();
-    glUniform3f(glGetUniformLocation(s.Program, "textColor"), color.x, color.y, color.z);
+    ShaderUse(s);
+    glUniform3f(glGetUniformLocation(s->ID, "textColor"), color.red/255, color.green/255, color.blue/255);
     glActiveTexture(GL_TEXTURE0);
     glBindVertexArray(VAO);
 
     // iterate through all characters
-    std::string::const_iterator c;
-    for (c = text.begin(); c != text.end(); c++)
+    for (int i = 0; i < strlen(text); i++)
     {
-        Character ch = Characters[*c];
+        Character ch = characters[text[i]];
 
         float xpos = x + ch.Bearing.x * scale;
         float ypos = y - (ch.Size.y - ch.Bearing.y) * scale;
@@ -195,7 +247,7 @@ void RenderText(Shader &s, std::string text, float x, float y, float scale, glm:
             { xpos + w, ypos + h,   1.0f, 0.0f }           
         };
         // render glyph texture over quad
-        glBindTexture(GL_TEXTURE_2D, ch.textureID);
+        glBindTexture(GL_TEXTURE_2D, ch.TextureID);
         // update content of VBO memory
         glBindBuffer(GL_ARRAY_BUFFER, VBO);
         glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(vertices), vertices); 
@@ -207,6 +259,7 @@ void RenderText(Shader &s, std::string text, float x, float y, float scale, glm:
     }
     glBindVertexArray(0);
     glBindTexture(GL_TEXTURE_2D, 0);
+    glUseProgram(0)
 }
 
 
@@ -218,7 +271,7 @@ void UpdateWindow(Window* window) {
 
         if (element->type == TEXT) {
             Text* t = element->data;
-            render_string(t->text, 20, window->size.y - 40, t->scale);
+            RenderText(&textShader, t->text, 20, window->size.y - 40, t->scale, (Color){255,255,255});
         }
     }
 
@@ -230,31 +283,7 @@ bool WindowShouldClose(Window* window) {
     return glfwWindowShouldClose(window->openglWindow);
 }
 
-
-// ----------- Element Management -----------
-
-void ResizeElementsArray(Window* window, size_t newCount) {
-    window->elements = (Element**)realloc(window->elements, newCount * sizeof(Element*));
-    window->elementCount = newCount;
-}
-
-Element* CreateElement(ElementType type, void* data) {
-    Element* e = (Element*)malloc(sizeof(Element));
-    e->type = type;
-    e->data = data;
-    return e;
-}
-
-Text* CreateText(Vector2 size, char* text, float scale, Color color) {
-    Text* t = (Text*)malloc(sizeof(Text));
-    t->size = size;
-    t->text = text;
-    t->color = color;
-    t->scale = scale;
-    return t;
-}
-
-void AddText(Window* window, Text* txt) {
-    ResizeElementsArray(window, window->elementCount + 1);
-    window->elements[window->elementCount - 1] = CreateElement(TEXT, txt);
+void AddElement(Window* window, Element* element) {
+    ResizeElementsArray(window->elements, &window->elementCount, window->elementCount + 1);
+    window->elements[window->elementCount - 1] = element;
 }

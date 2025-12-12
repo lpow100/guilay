@@ -1,47 +1,29 @@
 #ifndef GUILAY_H
 #define GUILAY_H
 
+#include "common/types.h"
+
 #include <stdbool.h>
 #include <stdint.h>
 
 #define MAX_ELEMENTS 255
 
-typedef enum {
-    TEXT, BUTTON
-} ElementType;
-typedef struct Element Element;
-
 // A window, chaging internal values without using the proper functions is not reccomended
 typedef struct Window Window;
-typedef struct Vector2 {
-    float x;
-    float y;
-} Vector2;
-
-typedef struct Vector2i {
-    int x;
-    int y;
-} Vector2i;
-
-typedef struct Color{
-    uint8_t red;
-    uint8_t blue;
-    uint8_t green;
-} Color;
 
 typedef struct Character Character;
 
 
 // initializes guilay
 int GuilayInit();
+// Loads the assets
+int LoadAssets(Window* window);
 // Cleanly exits guilay
 void GuilayExit();
 
 // Creates a window
 // Items added to the window are layed out in order of how they are added by defualt.
 Window* CreateWindow(Vector2i size, char* name);
-// Renders the window
-void PrepareWindow(Window* window);
 // Fills a window with a color
 void FillWindow(Window* window, Color fillColor);
 // Updates the window
